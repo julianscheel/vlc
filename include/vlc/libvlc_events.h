@@ -73,6 +73,7 @@ enum libvlc_event_e {
     libvlc_MediaPlayerSnapshotTaken,
     libvlc_MediaPlayerLengthChanged,
     libvlc_MediaPlayerVout,
+    libvlc_MediaPlayerTeletextChanged,
     libvlc_MediaPlayerScrambledChanged,
     libvlc_MediaPlayerESAdded,
     libvlc_MediaPlayerESDeleted,
