@@ -443,6 +443,48 @@ void libvlc_video_set_crop_geometry( libvlc_media_player_t *p_mi,
     free (pp_vouts);
 }
 
+int libvlc_video_get_mmal_vout_crop(libvlc_media_player_t *p_mi)
+{
+    return var_GetInteger(p_mi, "mmal-vout-crop");
+}
+
+void libvlc_video_set_mmal_vout_crop(libvlc_media_player_t *p_mi, int crop)
+{
+    var_SetInteger(p_mi, "mmal-vout-crop", crop);
+
+    size_t n;
+    vout_thread_t **pp_vouts = GetVouts (p_mi, &n);
+    for (size_t i = 0; i < n; i++)
+    {
+        vout_thread_t *p_vout = pp_vouts[i];
+
+        var_SetInteger (p_vout, "mmal-vout-crop", crop);
+        vlc_object_release (p_vout);
+    }
+    free (pp_vouts);
+}
+
+int libvlc_video_get_mmal_vout_crop_hd(libvlc_media_player_t *p_mi)
+{
+    return var_GetInteger(p_mi, "mmal-vout-crop-hd");
+}
+
+void libvlc_video_set_mmal_vout_crop_hd(libvlc_media_player_t *p_mi, int crop)
+{
+    var_SetInteger(p_mi, "mmal-vout-crop-hd", crop);
+
+    size_t n;
+    vout_thread_t **pp_vouts = GetVouts (p_mi, &n);
+    for (size_t i = 0; i < n; i++)
+    {
+        vout_thread_t *p_vout = pp_vouts[i];
+
+        var_SetInteger (p_vout, "mmal-vout-crop-hd", crop);
+        vlc_object_release (p_vout);
+    }
+    free (pp_vouts);
+}
+
 int libvlc_video_get_teletext( libvlc_media_player_t *p_mi )
 {
     input_thread_t *p_input_thread;
