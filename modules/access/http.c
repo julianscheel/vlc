@@ -695,7 +695,8 @@ static int ReadICYMeta( access_t *p_access );
 static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
 {
     access_sys_t *p_sys = p_access->p_sys;
-    int i_read;
+    int i_read = 0;
+    size_t i_len_requested = i_len;
 
     if( p_sys->fd == -1 )
         goto fatal;
@@ -712,7 +713,10 @@ static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
             i_len = p_sys->i_remaining;
     }
     if( i_len == 0 )
-        goto fatal;
+        if ( p_sys->b_reconnect )
+            goto reconnect;
+        else
+            goto fatal;
 
     if( p_sys->i_icy_meta > 0 && p_access->info.i_pos - p_sys->i_icy_offset > 0 )
     {
@@ -731,6 +735,7 @@ static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
     if( ReadData( p_access, &i_read, p_buffer, i_len ) )
         goto fatal;
 
+reconnect:
     if( i_read <= 0 )
     {
         /*
@@ -743,7 +748,7 @@ static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
         {
             Request( p_access, 0 );
             p_sys->b_continuous = false;
-            i_read = Read( p_access, p_buffer, i_len );
+            i_read = Read( p_access, p_buffer, i_len_requested );
             p_sys->b_continuous = true;
         }
         Disconnect( p_access );
@@ -757,7 +762,7 @@ static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
             else
             {
                 p_sys->b_reconnect = false;
-                i_read = Read( p_access, p_buffer, i_len );
+                i_read = Read( p_access, p_buffer, i_len_requested );
                 p_sys->b_reconnect = true;
 
                 return i_read;
