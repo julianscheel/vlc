@@ -954,9 +954,6 @@ static int Control( access_t *p_access, int i_query, va_list args )
             *pb_bool = p_sys->b_seekable;
             break;
         case ACCESS_CAN_FASTSEEK:
-            pb_bool = (bool*)va_arg( args, bool* );
-            *pb_bool = false;
-            break;
         case ACCESS_CAN_PAUSE:
         case ACCESS_CAN_CONTROL_PACE:
             pb_bool = (bool*)va_arg( args, bool* );
@@ -1232,7 +1229,7 @@ static int Request( access_t *p_access, uint64_t i_tell )
     }
     if( p_sys->i_code != 206 && p_sys->i_code != 401 )
     {
-        p_sys->b_seekable = false;
+        /*p_sys->b_seekable = false;*/
     }
     /* Authentication error - We'll have to display the dialog */
     if( p_sys->i_code == 401 )
