@@ -758,6 +758,8 @@ reconnect:
             if( Connect( p_access, p_access->info.i_pos ) )
             {
                 msg_Dbg( p_access, "reconnection failed" );
+                Connect (p_access, p_sys->size );
+                Disconnect( p_access );
             }
             else
             {
