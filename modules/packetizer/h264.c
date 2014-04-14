@@ -839,6 +839,7 @@ static void PutSPS( decoder_t *p_dec, block_t *p_frag )
     p_sys->i_log2_max_frame_num = bs_read_ue( &s );
     if( p_sys->i_log2_max_frame_num > 12)
         p_sys->i_log2_max_frame_num = 12;
+    p_sys->i_log2_max_frame_num += 4;
     /* Read poc_type */
     p_sys->i_pic_order_cnt_type = bs_read_ue( &s );
     if( p_sys->i_pic_order_cnt_type == 0 )
@@ -1036,7 +1037,7 @@ static void ParseSlice( decoder_t *p_dec, bool *pb_new_picture, slice_t *p_slice
     slice.i_nal_ref_idc = i_nal_ref_idc;
 
     slice.i_pic_parameter_set_id = bs_read_ue( &s );
-    slice.i_frame_num = bs_read( &s, p_sys->i_log2_max_frame_num + 4 );
+    slice.i_frame_num = bs_read( &s, p_sys->i_log2_max_frame_num );
 
     slice.i_field_pic_flag = 0;
     slice.i_bottom_field_flag = -1;
