@@ -74,6 +74,7 @@ struct decoder_sys_t {
     MMAL_QUEUE_T *decoded_pictures;
     vlc_mutex_t mutex;
 
+    mtime_t end_of_preroll_pts;
     bool b_top_field_first;
     bool b_progressive;
 
@@ -568,6 +569,17 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
         vlc_mutex_unlock(&sys->mutex);
     }
 
+    if (ret) {
+        if (sys->end_of_preroll_pts == 0 ||
+            sys->end_of_preroll_pts > ret->date) {
+                msg_Dbg(dec, "Drop frame as we are prerolling...");
+                picture_Release(ret);
+                ret = NULL;
+        } else if (sys->end_of_preroll_pts > 0) {
+            sys->end_of_preroll_pts = -1;
+        }
+    }
+
     if (ret)
         goto out;
 #else
@@ -593,6 +605,11 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
 
     if (block->i_flags & BLOCK_FLAG_DISCONTINUITY)
         flags |= MMAL_BUFFER_HEADER_FLAG_DISCONTINUITY;
+
+    if (!(block->i_flags & BLOCK_FLAG_PREROLL) && sys->end_of_preroll_pts == 0)
+        sys->end_of_preroll_pts = block->i_pts;
+    else if (block->i_flags & BLOCK_FLAG_PREROLL)
+        sys->end_of_preroll_pts = 0;
 
 #ifdef MMAL_TIMING_DEBUG
     msg_Dbg(dec, "timing queue data, %"PRId64, mdate());
