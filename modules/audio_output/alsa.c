@@ -304,8 +304,14 @@ static int Start (audio_output_t *aout, audio_sample_format_t *restrict fmt)
             pcm_format = SND_PCM_FORMAT_U8;
             break;
         default:
-            if (AOUT_FMT_SPDIF(fmt))
-                spdif = var_InheritBool (aout, "spdif");
+            if (AOUT_FMT_SPDIF(fmt)) {
+                msg_Dbg(aout, "Format is spdif compatible, check setting");
+                if (!strcmp (sys->device, "iec958") || !strcmp (sys->device, "hdmi"))
+                    spdif = true;
+                else
+                    spdif = var_InheritBool (aout, "spdif");
+                msg_Dbg(aout, "Spdif: %s", spdif ? "enabled" : "disabled");
+            }
             if (spdif)
             {
                 fmt->i_format = VLC_CODEC_SPDIFL;
