@@ -32,6 +32,7 @@
 
 #include <assert.h>
 #include <limits.h>
+#include <math.h>
 
 #include <vlc_common.h>
 #include <vlc_modules.h>
@@ -312,19 +313,19 @@ static spu_scale_t spu_scale_createq(int64_t wn, int64_t wd, int64_t hn, int64_t
 }
 static int spu_scale_w(int v, const spu_scale_t s)
 {
-    return v * s.w / SCALE_UNIT;
+    return (int)round((double)v * s.w / SCALE_UNIT);
 }
 static int spu_scale_h(int v, const spu_scale_t s)
 {
-    return v * s.h / SCALE_UNIT;
+    return (int)round((double)v * s.h / SCALE_UNIT);
 }
 static int spu_invscale_w(int v, const spu_scale_t s)
 {
-    return v * SCALE_UNIT / s.w;
+    return (int)round((double)v * SCALE_UNIT / s.w);
 }
 static int spu_invscale_h(int v, const spu_scale_t s)
 {
-    return v * SCALE_UNIT / s.h;
+    return (int)round((double)v * SCALE_UNIT / s.h);
 }
 
 /**
