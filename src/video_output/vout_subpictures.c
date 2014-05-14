@@ -658,6 +658,7 @@ static void SpuRenderRegion(spu_t *spu,
                             subpicture_t *subpic, subpicture_region_t *region,
                             const spu_scale_t scale_size,
                             const vlc_fourcc_t *chroma_list,
+                            const bool can_scale_subpictures,
                             const video_format_t *fmt,
                             const spu_area_t *subtitle_area, int subtitle_area_count,
                             mtime_t render_date)
@@ -769,6 +770,10 @@ static void SpuRenderRegion(spu_t *spu,
             convert_chroma = false;
     }
 
+    /* set no scale as default */
+    region->i_scale_to_width = region->fmt.i_visible_width;
+    region->i_scale_to_height = region->fmt.i_visible_height;
+
     /* Scale from rendered size to destination size */
     if (sys->scale && sys->scale->p_module &&
         (!using_palette || (sys->scale_yuvp && sys->scale_yuvp->p_module)) &&
@@ -783,8 +788,9 @@ static void SpuRenderRegion(spu_t *spu,
             bool is_changed = false;
 
             /* Check resize changes */
-            if (dst_width  != private->fmt.i_visible_width ||
-                dst_height != private->fmt.i_visible_height)
+            if (!can_scale_subpictures &&
+                (dst_width  != private->fmt.i_visible_width ||
+                 dst_height != private->fmt.i_visible_height))
                 is_changed = true;
 
             /* Check forced palette changes */
@@ -808,7 +814,7 @@ static void SpuRenderRegion(spu_t *spu,
             picture_Hold(picture);
 
             /* Convert YUVP to YUVA/RGBA first for better scaling quality */
-            if (using_palette) {
+            if (using_palette && (convert_chroma || !can_scale_subpictures)) {
                 filter_t *scale_yuvp = sys->scale_yuvp;
 
                 scale_yuvp->fmt_in.video = region->fmt;
@@ -827,9 +833,10 @@ static void SpuRenderRegion(spu_t *spu,
 
             /* Conversion(except from YUVP)/Scaling */
             if (picture &&
-                (picture->format.i_visible_width  != dst_width ||
-                 picture->format.i_visible_height != dst_height ||
-                 (convert_chroma && !using_palette)))
+                ((!can_scale_subpictures &&
+                 (picture->format.i_visible_width  != dst_width ||
+                  picture->format.i_visible_height != dst_height)) ||
+                  (convert_chroma && !using_palette)))
             {
                 scale->fmt_in.video  = picture->format;
                 scale->fmt_out.video = picture->format;
@@ -839,17 +846,22 @@ static void SpuRenderRegion(spu_t *spu,
                     scale->fmt_out.i_codec        =
                     scale->fmt_out.video.i_chroma = chroma_list[0];
 
-                scale->fmt_out.video.i_width  = dst_width;
-                scale->fmt_out.video.i_height = dst_height;
+                if (!can_scale_subpictures) {
+                    scale->fmt_out.video.i_width  = dst_width;
+                    scale->fmt_out.video.i_height = dst_height;
 
-                scale->fmt_out.video.i_visible_width =
-                    spu_scale_w(region->fmt.i_visible_width, scale_size);
-                scale->fmt_out.video.i_visible_height =
-                    spu_scale_h(region->fmt.i_visible_height, scale_size);
+                    scale->fmt_out.video.i_visible_width = dst_width;
+                    scale->fmt_out.video.i_visible_height = dst_height;
+                }
 
                 picture = scale->pf_video_filter(scale, picture);
                 if (!picture)
                     msg_Err(spu, "scaling failed");
+            }
+
+            if (picture) {
+                region->i_scale_to_width = dst_width;
+                region->i_scale_to_height = dst_height;
             }
 
             /* */
@@ -913,6 +925,8 @@ static void SpuRenderRegion(spu_t *spu,
         dst->i_x       = x_offset;
         dst->i_y       = y_offset;
         dst->i_align   = 0;
+        dst->i_scale_to_width = region->i_scale_to_width;
+        dst->i_scale_to_height = region->i_scale_to_height;
         if (dst->p_picture)
             picture_Release(dst->p_picture);
         dst->p_picture = picture_Hold(region_picture);
@@ -953,6 +967,7 @@ static subpicture_t *SpuRenderSubpictures(spu_t *spu,
                                           unsigned int i_subpicture,
                                           subpicture_t **pp_subpicture,
                                           const vlc_fourcc_t *chroma_list,
+                                          const bool can_scale_subpictures,
                                           const video_format_t *fmt_dst,
                                           const video_format_t *fmt_src,
                                           mtime_t render_subtitle_date,
@@ -1059,7 +1074,7 @@ static subpicture_t *SpuRenderSubpictures(spu_t *spu,
             /* */
             SpuRenderRegion(spu, output_last_ptr, &area,
                             subpic, region, scale,
-                            chroma_list, fmt_dst,
+                            chroma_list, can_scale_subpictures, fmt_dst,
                             subtitle_area, subtitle_area_count,
                             subpic->b_subtitle ? render_subtitle_date : render_osd_date);
             if (*output_last_ptr)
@@ -1402,6 +1417,7 @@ void spu_PutSubpicture(spu_t *spu, subpicture_t *subpic)
 
 subpicture_t *spu_Render(spu_t *spu,
                          const vlc_fourcc_t *chroma_list,
+                         const bool can_scale_subpictures,
                          const video_format_t *fmt_dst,
                          const video_format_t *fmt_src,
                          mtime_t render_subtitle_date,
@@ -1478,6 +1494,7 @@ subpicture_t *spu_Render(spu_t *spu,
     subpicture_t *render = SpuRenderSubpictures(spu,
                                                 subpicture_count, subpicture_array,
                                                 chroma_list,
+                                                can_scale_subpictures,
                                                 fmt_dst,
                                                 fmt_src,
                                                 render_subtitle_date,

@@ -878,6 +878,7 @@ static int ThreadDisplayRenderPicture(vout_thread_t *vout, bool is_forced)
                                !vout_IsDisplayFiltered(vd) ||
                                vd->fmt.i_width * vd->fmt.i_height <= vd->source.i_width * vd->source.i_height);
 
+    const bool can_scale_subpictures = do_dr_spu && vd->info.can_scale_subpictures;
     const vlc_fourcc_t *subpicture_chromas;
     video_format_t fmt_spu;
     if (do_dr_spu) {
@@ -921,8 +922,8 @@ static int ThreadDisplayRenderPicture(vout_thread_t *vout, bool is_forced)
     video_format_t fmt_spu_rot;
     video_format_ApplyRotation(&fmt_spu_rot, &fmt_spu);
     subpicture_t *subpic = spu_Render(vout->p->spu,
-                                      subpicture_chromas, &fmt_spu_rot,
-                                      &vd->source,
+                                      subpicture_chromas, can_scale_subpictures,
+                                      &fmt_spu_rot, &vd->source,
                                       render_subtitle_date, render_osd_date,
                                       do_snapshot);
     /*

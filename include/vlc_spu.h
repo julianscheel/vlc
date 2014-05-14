@@ -75,12 +75,14 @@ VLC_API void spu_PutSubpicture( spu_t *, subpicture_t * );
  * subtitles visibles at the requested date.
  *
  * \param p_chroma_list is a list of supported chroma for the output (can be NULL)
+ * \param b_can_scale_subpictures is a flag indicating whether the output can
+ *        scale output on its own.
  * \param p_fmt_dst is the format of the picture on which the return subpicture will be rendered.
  * \param p_fmt_src is the format of the original(source) video.
  *
  * The returned value if non NULL must be released by subpicture_Delete().
  */
-VLC_API subpicture_t * spu_Render( spu_t *, const vlc_fourcc_t *p_chroma_list, const video_format_t *p_fmt_dst, const video_format_t *p_fmt_src, mtime_t render_subtitle_date, mtime_t render_osd_date, bool ignore_osd );
+VLC_API subpicture_t * spu_Render( spu_t *, const vlc_fourcc_t *p_chroma_list, const bool b_can_scale_subpictures, const video_format_t *p_fmt_dst, const video_format_t *p_fmt_src, mtime_t render_subtitle_date, mtime_t render_osd_date, bool ignore_osd );
 
 /**
  * It registers a new SPU channel.
