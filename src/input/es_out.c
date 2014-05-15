@@ -1323,7 +1323,8 @@ static void EsOutProgramUpdateScrambled( es_out_t *p_out, es_out_pgrm_t *p_pgrm 
 
     for( int i = 0; i < p_sys->i_es; i++ )
     {
-        if( p_sys->es[i]->p_pgrm == p_pgrm && p_sys->es[i]->b_scrambled )
+        if( EsIsSelected(p_sys->es[i]) &&
+            p_sys->es[i]->p_pgrm == p_pgrm && p_sys->es[i]->b_scrambled )
         {
             b_scrambled = true;
             break;
