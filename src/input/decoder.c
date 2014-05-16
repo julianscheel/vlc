@@ -1228,14 +1228,6 @@ static void DecoderPlaySpu( decoder_t *p_dec, subpicture_t *p_subpic )
     vout_thread_t *p_vout = p_owner->p_spu_vout;
 
     /* */
-    if( p_subpic->i_start <= VLC_TS_INVALID )
-    {
-        msg_Warn( p_dec, "non-dated spu buffer received" );
-        subpicture_Delete( p_subpic );
-        return;
-    }
-
-    /* */
     vlc_mutex_lock( &p_owner->lock );
 
     if( p_owner->b_waiting )
@@ -1246,8 +1238,14 @@ static void DecoderPlaySpu( decoder_t *p_dec, subpicture_t *p_subpic )
 
     bool b_reject = DecoderWaitUnblock( p_dec );
 
-    DecoderFixTs( p_dec, &p_subpic->i_start, &p_subpic->i_stop, NULL,
-                  NULL, INT64_MAX );
+    /* If a spu picture is undated this is likely teletext.
+     * In this case the picture shall be immediately valid.
+     */
+    if( p_subpic->i_start == VLC_TS_INVALID )
+        p_subpic->i_start = mdate();
+    else
+        DecoderFixTs( p_dec, &p_subpic->i_start, &p_subpic->i_stop, NULL,
+                      NULL, INT64_MAX );
 
     if( p_subpic->i_start <= VLC_TS_INVALID )
         b_reject = true;
