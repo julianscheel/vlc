@@ -343,6 +343,7 @@ static int Open(vlc_object_t *object)
 
     sys->dmx_handle = vc_dispmanx_display_open(0);
     vd->info.subpicture_chromas = subpicture_chromas;
+    vd->info.can_scale_subpictures = true;
 
     sys->crop = 0;
 out:
@@ -997,7 +998,7 @@ static struct dmx_region_t *dmx_region_new(vout_display_t *vd,
     vc_dispmanx_rect_set(&dmx_region->src_rect, 0, 0, fmt->i_visible_width << 16,
                     fmt->i_visible_height << 16);
     vc_dispmanx_rect_set(&dmx_region->dst_rect, region->i_x, region->i_y,
-                    fmt->i_visible_width, fmt->i_visible_height);
+                    region->i_scale_to_width, region->i_scale_to_height);
 
     dmx_region->resource = vc_dispmanx_resource_create(VC_IMAGE_RGBA32,
                     dmx_region->bmp_rect.width | (region->p_picture->p[0].i_pitch << 16),
