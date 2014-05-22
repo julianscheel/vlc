@@ -363,6 +363,9 @@ static subpicture_t *Decode( decoder_t *p_dec, block_t **pp_block )
     const bool b_opaque = p_sys->b_opaque;
     vlc_mutex_unlock( &p_sys->lock );
 
+    if (i_wanted_page != var_GetInteger( p_dec, "vbi-page" ))
+        var_SetInteger( p_dec, "vbi-page", i_wanted_page );
+
     /* Try to see if the page we want is in the cache yet */
     memset( &p_page, 0, sizeof(vbi_page) );
     b_cached = vbi_fetch_vt_page( p_sys->p_vbi_dec, &p_page,
