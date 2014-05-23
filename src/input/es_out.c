@@ -912,8 +912,8 @@ static void EsOutESVarUpdateGeneric( es_out_t *out, int i_id,
     {
         if( psz_language && *psz_language )
         {
-            if( asprintf( &text.psz_string, "%s - [%s]", fmt->psz_description,
-                          psz_language ) == -1 )
+            if( asprintf( &text.psz_string, "%s - [%s] (%s)", fmt->psz_description,
+                          psz_language, vlc_fourcc_GetDescription( fmt->i_cat, fmt->i_codec ) ) == -1 )
                 text.psz_string = NULL;
         }
         else text.psz_string = strdup( fmt->psz_description );
@@ -922,12 +922,15 @@ static void EsOutESVarUpdateGeneric( es_out_t *out, int i_id,
     {
         if( psz_language && *psz_language )
         {
-            if( asprintf( &text.psz_string, "%s %"PRId64" - [%s]", _( "Track" ), val.i_int, psz_language ) == -1 )
+            if( asprintf( &text.psz_string, "%s %"PRId64" - [%s] (%s)", _( "Track" ),
+                        val.i_int, psz_language,
+                        vlc_fourcc_GetDescription( fmt->i_cat, fmt->i_codec )) == -1 )
                 text.psz_string = NULL;
         }
         else
         {
-            if( asprintf( &text.psz_string, "%s %"PRId64, _( "Track" ), val.i_int ) == -1 )
+            if( asprintf( &text.psz_string, "%s %"PRId64 " (%s)", _( "Track" ), val.i_int,
+                          vlc_fourcc_GetDescription( fmt->i_cat, fmt->i_codec )) == -1 )
                 text.psz_string = NULL;
         }
     }
