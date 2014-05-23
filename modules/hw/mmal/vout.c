@@ -29,6 +29,7 @@
 #include <math.h>
 
 #include <vlc_common.h>
+#define MERGE_SUBPICTURE_REGIONS
 #include <vlc_plugin.h>
 #include <vlc_threads.h>
 #include <vlc_vout_display.h>
@@ -196,6 +197,18 @@ static int set_latency_target(vout_display_t *vd, bool enable);
 /* DispManX */
 static void display_subpicture(vout_display_t *vd, subpicture_t *subpicture);
 static void close_dmx(vout_display_t *vd);
+
+#ifdef MERGE_SUBPICTURE_REGIONS
+static struct dmx_region_t *dmx_merged_region_new(vout_display_t *vd,
+                DISPMANX_UPDATE_HANDLE_T update,
+                int x, int y, int width, int height,
+                int dst_x, int dst_y, int dst_width, int dst_height,
+                subpicture_t *subpicture);
+static void dmx_merged_region_update(struct dmx_region_t *dmx_region,
+                DISPMANX_UPDATE_HANDLE_T update, int x, int y,
+                subpicture_t *subpicture);
+#endif
+
 static struct dmx_region_t *dmx_region_new(vout_display_t *vd,
                 DISPMANX_UPDATE_HANDLE_T update, subpicture_region_t *region);
 static void dmx_region_update(struct dmx_region_t *dmx_region,
@@ -913,7 +926,85 @@ static void display_subpicture(vout_display_t *vd, subpicture_t *subpicture)
     video_format_t *fmt;
     struct dmx_region_t *dmx_region_next;
 
-    if(subpicture) {
+    if(subpicture && subpicture->p_region) {
+#ifdef MERGE_SUBPICTURE_REGIONS
+        subpicture_region_t *region = subpicture->p_region;
+        unsigned int width = region->fmt.i_visible_width;
+        unsigned int height = region->fmt.i_visible_height;
+        int x = region->i_x;
+        int y = region->i_y;
+        int x2 = x + width;
+        int y2 = y + height;
+
+        unsigned dst_width = region->i_scale_to_width;
+        unsigned dst_height = region->i_scale_to_height;
+        int dst_x = region->i_scaled_x_offset;
+        int dst_y = region->i_scaled_y_offset;
+        int dst_x2 = region->i_scaled_x_offset + dst_width;
+        int dst_y2 = region->i_scaled_y_offset + dst_height;
+
+        picture = region->p_picture;
+
+        while ((region = region->p_next)) {
+            int reg_x2;
+            int reg_y2;
+            int dst_reg_x2;
+            int dst_reg_y2;
+
+            fmt = &region->fmt;
+            if (width != fmt->i_visible_width) {
+                msg_Err(vd, "Subpicture regions with different widths are not supported yet");
+                return;
+            }
+            x = region->i_x < x ? region->i_x : x;
+            y = region->i_y < y ? region->i_y : y;
+            reg_x2 = region->i_x + fmt->i_visible_width;
+            reg_y2 = region->i_y + fmt->i_visible_height;
+            x2 = reg_x2 > x2 ? reg_x2 : x2;
+            y2 = reg_y2 > y2 ? reg_y2 : y2;
+
+            dst_x = region->i_scaled_x_offset < dst_x ? region->i_scaled_x_offset : dst_x;
+            dst_y = region->i_scaled_y_offset < dst_y ? region->i_scaled_y_offset : dst_y;
+            dst_reg_x2 = region->i_scaled_x_offset + region->i_scale_to_width;
+            dst_reg_y2 = region->i_scaled_y_offset + region->i_scale_to_height;
+            dst_x2 = dst_reg_x2 > dst_x2 ? dst_reg_x2 : dst_x2;
+            dst_y2 = dst_reg_y2 > dst_y2 ? dst_reg_y2 : dst_y2;
+        }
+
+        width = x2 - x;
+        height = y2 - y;
+        dst_width = dst_x2 - dst_x;
+        dst_height = dst_y2 - dst_y;
+
+        /* if reached here all regions have the same size, so we can create
+         * one dmx_region for it */
+        if(!*dmx_region) {
+            if(!update)
+                update = vc_dispmanx_update_start(10);
+            *dmx_region = dmx_merged_region_new(vd, update, x, y, width, height,
+                    dst_x, dst_y, dst_width, dst_height,
+                    subpicture);
+        } else if(((*dmx_region)->bmp_rect.width != (int32_t)width) ||
+                  ((*dmx_region)->bmp_rect.height != (int32_t)height) ||
+                  ((*dmx_region)->dst_rect.x != (int32_t)dst_x) ||
+                  ((*dmx_region)->dst_rect.y != (int32_t)dst_y) ||
+                  ((*dmx_region)->alpha.opacity != (uint32_t)subpicture->p_region->i_alpha)) {
+            dmx_region_next = (*dmx_region)->next;
+            if(!update)
+                update = vc_dispmanx_update_start(10);
+            dmx_region_delete(*dmx_region, update);
+            *dmx_region = dmx_merged_region_new(vd, update, x, y, width, height,
+                    dst_x, dst_y, dst_width, dst_height,
+                    subpicture);
+            (*dmx_region)->next = dmx_region_next;
+        } else if((*dmx_region)->picture != picture) { /* FIXME: Check not only the first region pic */
+            if(!update)
+                update = vc_dispmanx_update_start(10);
+            dmx_merged_region_update(*dmx_region, update, x, y, subpicture);
+        }
+
+        dmx_region = &(*dmx_region)->next;
+#else
         subpicture_region_t *region = subpicture->p_region;
         while(region) {
             picture = region->p_picture;
@@ -943,6 +1034,7 @@ static void display_subpicture(vout_display_t *vd, subpicture_t *subpicture)
             dmx_region = &(*dmx_region)->next;
             region = region->p_next;
         }
+#endif
     }
 
     /* Remove remaining regions */
