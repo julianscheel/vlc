@@ -59,8 +59,10 @@ struct subpicture_region_t
     video_format_t  fmt;                          /**< format of the picture */
     picture_t       *p_picture;          /**< picture comprising this region */
 
-    int             i_scale_to_width;   /**< scale picture to width before use */
-    int             i_scale_to_height;  /**< scale picture to height before use */
+    unsigned int    i_scale_to_width;   /**< scale picture to width before use */
+    unsigned int    i_scale_to_height;  /**< scale picture to height before use */
+    int             i_scaled_x_offset;
+    int             i_scaled_y_offset;
 
     int             i_x;                             /**< position of region */
     int             i_y;                             /**< position of region */

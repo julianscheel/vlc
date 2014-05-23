@@ -736,8 +736,8 @@ static void SpuRenderRegion(spu_t *spu,
     SpuAreaFitInside(&restrained, &display);
 
     /* Fix the position for the current scale_size */
-    x_offset = spu_scale_w(restrained.x, restrained.scale);
-    y_offset = spu_scale_h(restrained.y, restrained.scale);
+    region->i_scaled_x_offset = spu_scale_w(restrained.x, restrained.scale);
+    region->i_scaled_y_offset = spu_scale_h(restrained.y, restrained.scale);
 
     /* */
     if (force_palette) {
@@ -781,6 +781,11 @@ static void SpuRenderRegion(spu_t *spu,
         using_palette || convert_chroma)) {
         const unsigned dst_width  = spu_scale_w(region->fmt.i_visible_width,  scale_size);
         const unsigned dst_height = spu_scale_h(region->fmt.i_visible_height, scale_size);
+
+        if (region->p_picture) {
+            region->i_scale_to_width = dst_width;
+            region->i_scale_to_height = dst_height;
+        }
 
         /* Destroy the cache if unusable */
         if (region->p_private) {
@@ -857,11 +862,9 @@ static void SpuRenderRegion(spu_t *spu,
                 picture = scale->pf_video_filter(scale, picture);
                 if (!picture)
                     msg_Err(spu, "scaling failed");
-            }
 
-            if (picture) {
-                region->i_scale_to_width = dst_width;
-                region->i_scale_to_height = dst_height;
+                x_offset = region->i_scaled_x_offset;
+                y_offset = region->i_scaled_y_offset;
             }
 
             /* */
@@ -894,29 +897,29 @@ static void SpuRenderRegion(spu_t *spu,
         int crop_height= spu_scale_h(sys->crop.height,scale_size);
 
         /* Find the intersection */
-        if (crop_x + crop_width <= x_offset ||
+        if (crop_x + crop_width <= region->i_scaled_x_offset ||
             x_offset + (int)region_fmt.i_visible_width  < crop_x ||
-            crop_y + crop_height <= y_offset ||
+            crop_y + crop_height <= region->i_scaled_y_offset ||
             y_offset + (int)region_fmt.i_visible_height < crop_y) {
             /* No intersection */
             region_fmt.i_visible_width  =
             region_fmt.i_visible_height = 0;
         } else {
             int x, y, x_end, y_end;
-            x = __MAX(crop_x, x_offset);
-            y = __MAX(crop_y, y_offset);
+            x = __MAX(crop_x, region->i_scaled_x_offset);
+            y = __MAX(crop_y, region->i_scaled_y_offset);
             x_end = __MIN(crop_x + crop_width,
-                          x_offset + (int)region_fmt.i_visible_width);
+                          region->i_scaled_x_offset + (int)region_fmt.i_visible_width);
             y_end = __MIN(crop_y + crop_height,
-                          y_offset + (int)region_fmt.i_visible_height);
+                          region->i_scaled_y_offset + (int)region_fmt.i_visible_height);
 
-            region_fmt.i_x_offset       = x - x_offset;
-            region_fmt.i_y_offset       = y - y_offset;
+            region_fmt.i_x_offset       = x - region->i_scaled_x_offset;
+            region_fmt.i_y_offset       = y - region->i_scaled_y_offset;
             region_fmt.i_visible_width  = x_end - x;
             region_fmt.i_visible_height = y_end - y;
 
-            x_offset = __MAX(x, 0);
-            y_offset = __MAX(y, 0);
+            region->i_scaled_x_offset = __MAX(x, 0);
+            region->i_scaled_y_offset = __MAX(y, 0);
         }
     }
 
@@ -927,6 +930,8 @@ static void SpuRenderRegion(spu_t *spu,
         dst->i_align   = 0;
         dst->i_scale_to_width = region->i_scale_to_width;
         dst->i_scale_to_height = region->i_scale_to_height;
+        dst->i_scaled_x_offset = region->i_scaled_x_offset;
+        dst->i_scaled_y_offset = region->i_scaled_y_offset;
         if (dst->p_picture)
             picture_Release(dst->p_picture);
         dst->p_picture = picture_Hold(region_picture);
