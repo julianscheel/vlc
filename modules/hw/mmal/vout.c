@@ -87,6 +87,8 @@
 #define PHASE_OFFSET_TARGET ((double)0.25)
 #define PHASE_CHECK_INTERVAL 100
 
+#define DPM_RGBA32(a, r, g, b) (((uint8_t)(a)) << 24 | ((uint8_t)(r)) << 16 | ((uint8_t)(g)) << 8 | ((uint8_t)(b)) << 0)
+
 static int Open(vlc_object_t *);
 static void Close(vlc_object_t *);
 
@@ -166,6 +168,7 @@ struct vout_display_sys_t {
 
 static const vlc_fourcc_t subpicture_chromas[] = {
     VLC_CODEC_RGBA,
+    VLC_CODEC_YUVP,
     0
 };
 
@@ -535,6 +538,7 @@ static picture_pool_t *vd_pool(vout_display_t *vd, unsigned count)
     MMAL_STATUS_T status;
     unsigned i;
 
+    msg_Dbg(vd, "Picture pool with %u pictures requested", count);
     if (sys->picture_pool) {
         if (sys->num_buffers < count)
             msg_Warn(vd, "Picture pool with %u pictures requested, but we already have one with %u pictures",
@@ -1006,7 +1010,7 @@ static void display_subpicture(vout_display_t *vd, subpicture_t *subpicture)
         dmx_region = &(*dmx_region)->next;
 #else
         subpicture_region_t *region = subpicture->p_region;
-        while(region) {
+        while (region) {
             picture = region->p_picture;
             fmt = &region->fmt;
 
@@ -1049,7 +1053,7 @@ static void display_subpicture(vout_display_t *vd, subpicture_t *subpicture)
     *dmx_region = NULL;
 
     if(update)
-        vc_dispmanx_update_submit_sync(update);
+        vc_dispmanx_update_submit(update, NULL, NULL);
 }
 
 static void close_dmx(vout_display_t *vd)
@@ -1074,16 +1078,117 @@ static void close_dmx(vout_display_t *vd)
     sys->dmx_handle = DISPMANX_NO_HANDLE;
 }
 
+static struct dmx_region_t *dmx_merged_region_new(vout_display_t *vd,
+                DISPMANX_UPDATE_HANDLE_T update,
+                int x, int y, int width, int height,
+                int dst_x, int dst_y, int dst_width, int dst_height,
+                subpicture_t *subpicture)
+{
+    static unsigned int palette[256];
+    vout_display_sys_t *sys = vd->sys;
+    struct dmx_region_t *dmx_region = malloc(sizeof(struct dmx_region_t));
+    video_format_t *fmt = &subpicture->p_region->fmt;
+    subpicture_region_t *region;
+    VC_IMAGE_TYPE_T img_type;
+    uint32_t image_handle;
+    int i;
+
+    dmx_region->pos_x = x;
+    dmx_region->pos_y = y;
+
+    if (fmt->i_chroma == VLC_CODEC_RGBA)
+        img_type = VC_IMAGE_RGBA32;
+    else if (fmt->i_chroma == VLC_CODEC_YUVP)
+        img_type = VC_IMAGE_8BPP;
+
+    vc_dispmanx_rect_set(&dmx_region->bmp_rect, 0, 0, width, height);
+    vc_dispmanx_rect_set(&dmx_region->src_rect, 0, 0, width << 16, height << 16);
+    vc_dispmanx_rect_set(&dmx_region->dst_rect, dst_x, dst_y, dst_width, dst_height);
+
+    dmx_region->resource = vc_dispmanx_resource_create(img_type,
+                    dmx_region->bmp_rect.width | (subpicture->p_region->p_picture->p[0].i_pitch << 16),
+                    dmx_region->bmp_rect.height | (dmx_region->bmp_rect.height << 16),
+                    &image_handle);
+
+    dmx_region->alpha.opacity = 0;
+    for (region = subpicture->p_region; region != NULL; region = region->p_next) {
+        vc_dispmanx_rect_set(&dmx_region->bmp_rect, 0, region->i_y - y,
+                region->fmt.i_visible_width, region->fmt.i_visible_height);
+        vc_dispmanx_resource_write_data(dmx_region->resource, img_type,
+                        region->p_picture->p[0].i_pitch,
+                        region->p_picture->p[0].p_pixels - (region->i_y - y) * region->p_picture->p[0].i_pitch,
+                        &dmx_region->bmp_rect);
+
+        if (region->i_alpha > (int)dmx_region->alpha.opacity)
+            dmx_region->alpha.opacity = region->i_alpha;
+    }
+
+    /* Convert YUV palette to RGB palette and push to dispmanx */
+    if (fmt->i_chroma == VLC_CODEC_YUVP) {
+        uint8_t *yuv_pal;
+        for (i = 0; i < fmt->p_palette->i_entries; i++) {
+            yuv_pal = fmt->p_palette->palette[i];
+            palette[i] = DPM_RGBA32(yuv_pal[3],
+                                   1.164 * (yuv_pal[0] - 16) + 2.018 * (yuv_pal[1] - 128),
+                                   1.164 * (yuv_pal[0] - 16) - 0.813 * (yuv_pal[2] - 128) - 0.391 * (yuv_pal[1] - 128),
+                                   1.163 * (yuv_pal[0] - 16) + 1.596 * (yuv_pal[2] - 128));
+        }
+        vc_dispmanx_resource_set_palette(dmx_region->resource, palette, 0, sizeof(palette));
+
+        dmx_region->alpha.mask = DISPMANX_NO_HANDLE;
+    } else {
+        dmx_region->alpha.mask = DISPMANX_NO_HANDLE;
+    }
+
+    dmx_region->alpha.flags = DISPMANX_FLAGS_ALPHA_FROM_SOURCE | DISPMANX_FLAGS_ALPHA_MIX;
+    dmx_region->element = vc_dispmanx_element_add(update, sys->dmx_handle,
+                    sys->layer + 1, &dmx_region->dst_rect, dmx_region->resource,
+                    &dmx_region->src_rect, DISPMANX_PROTECTION_NONE,
+                    &dmx_region->alpha, NULL, VC_IMAGE_ROT0);
+
+    dmx_region->next = NULL;
+    dmx_region->picture = subpicture->p_region->p_picture;
+
+    return dmx_region;
+}
+
+static void dmx_merged_region_update(struct dmx_region_t *dmx_region,
+                DISPMANX_UPDATE_HANDLE_T update, int x, int y,
+                subpicture_t *subpicture)
+{
+    subpicture_region_t *region;
+    VLC_UNUSED(x);
+    for (region = subpicture->p_region; region != NULL; region = region->p_next) {
+        vc_dispmanx_rect_set(&dmx_region->bmp_rect, 0, region->i_y - y,
+                region->fmt.i_visible_width, region->fmt.i_visible_height);
+        vc_dispmanx_resource_write_data(dmx_region->resource, VC_IMAGE_RGBA32,
+                        region->p_picture->p[0].i_pitch,
+                        region->p_picture->p[0].p_pixels - (region->i_y - y) * region->p_picture->p[0].i_pitch,
+                        &dmx_region->bmp_rect);
+    }
+    vc_dispmanx_element_change_source(update, dmx_region->element, dmx_region->resource);
+    dmx_region->picture = subpicture->p_region->p_picture;
+}
+
+
 static struct dmx_region_t *dmx_region_new(vout_display_t *vd,
                 DISPMANX_UPDATE_HANDLE_T update, subpicture_region_t *region)
 {
+    static unsigned int palette[256];
     vout_display_sys_t *sys = vd->sys;
     video_format_t *fmt = &region->fmt;
     struct dmx_region_t *dmx_region = malloc(sizeof(struct dmx_region_t));
+    VC_IMAGE_TYPE_T img_type;
     uint32_t image_handle;
+    int i;
 
     dmx_region->pos_x = region->i_x;
     dmx_region->pos_y = region->i_y;
+
+    if (fmt->i_chroma == VLC_CODEC_RGBA)
+        img_type = VC_IMAGE_RGBA32;
+    else if (fmt->i_chroma == VLC_CODEC_YUVP)
+        img_type = VC_IMAGE_8BPP;
 
     vc_dispmanx_rect_set(&dmx_region->bmp_rect, 0, 0, fmt->i_visible_width,
                     fmt->i_visible_height);
@@ -1092,17 +1197,33 @@ static struct dmx_region_t *dmx_region_new(vout_display_t *vd,
     vc_dispmanx_rect_set(&dmx_region->dst_rect, region->i_x, region->i_y,
                     region->i_scale_to_width, region->i_scale_to_height);
 
-    dmx_region->resource = vc_dispmanx_resource_create(VC_IMAGE_RGBA32,
+    dmx_region->resource = vc_dispmanx_resource_create(img_type,
                     dmx_region->bmp_rect.width | (region->p_picture->p[0].i_pitch << 16),
                     dmx_region->bmp_rect.height | (dmx_region->bmp_rect.height << 16),
                     &image_handle);
-    vc_dispmanx_resource_write_data(dmx_region->resource, VC_IMAGE_RGBA32,
+    vc_dispmanx_resource_write_data(dmx_region->resource, img_type,
                     region->p_picture->p[0].i_pitch,
                     region->p_picture->p[0].p_pixels, &dmx_region->bmp_rect);
 
+    /* Convert YUV palette to RGB palette and push to dispmanx */
+    if (fmt->i_chroma == VLC_CODEC_YUVP) {
+        uint8_t *yuv_pal;
+        for (i = 0; i < fmt->p_palette->i_entries; i++) {
+            yuv_pal = fmt->p_palette->palette[i];
+            palette[i] = DPM_RGBA32(yuv_pal[3],
+                                   1.164 * (yuv_pal[0] - 16) + 2.018 * (yuv_pal[1] - 128),
+                                   1.164 * (yuv_pal[0] - 16) - 0.813 * (yuv_pal[2] - 128) - 0.391 * (yuv_pal[1] - 128),
+                                   1.163 * (yuv_pal[0] - 16) + 1.596 * (yuv_pal[2] - 128));
+        }
+        vc_dispmanx_resource_set_palette(dmx_region->resource, palette, 0, sizeof(palette));
+
+        dmx_region->alpha.mask = DISPMANX_NO_HANDLE;
+    } else {
+        dmx_region->alpha.mask = DISPMANX_NO_HANDLE;
+    }
+
     dmx_region->alpha.flags = DISPMANX_FLAGS_ALPHA_FROM_SOURCE | DISPMANX_FLAGS_ALPHA_MIX;
     dmx_region->alpha.opacity = region->i_alpha;
-    dmx_region->alpha.mask = DISPMANX_NO_HANDLE;
     dmx_region->element = vc_dispmanx_element_add(update, sys->dmx_handle,
                     sys->layer + 1, &dmx_region->dst_rect, dmx_region->resource,
                     &dmx_region->src_rect, DISPMANX_PROTECTION_NONE,
@@ -1127,6 +1248,8 @@ static void dmx_region_delete(struct dmx_region_t *dmx_region,
                 DISPMANX_UPDATE_HANDLE_T update)
 {
     vc_dispmanx_element_remove(update, dmx_region->element);
+    if (dmx_region->alpha.mask != DISPMANX_NO_HANDLE)
+        vc_dispmanx_resource_delete(dmx_region->alpha.mask);
     vc_dispmanx_resource_delete(dmx_region->resource);
     free(dmx_region);
 }
