@@ -58,6 +58,14 @@
 #define MMAL_NATIVE_INTERLACE_LONGTEXT N_("Force the HDMI output into an " \
         "interlaced video mode for interlaced video content.")
 
+#define MMAL_CROP_NAME "mmal-vout-crop"
+#define MMAL_CROP_TEXT N_("mmal video output cropping")
+#define MMAL_CROP_LONGTEXT N_("Crops the specified fraction from images before outputting them")
+
+#define MMAL_CROP_NAME_HD "mmal-vout-crop-hd"
+#define MMAL_CROP_TEXT_HD N_("mmal video output cropping (HD)")
+#define MMAL_CROP_LONGTEXT_HD N_("Crops the specified fraction from images before outputting them (HD)")
+
 /* Ideal rendering phase target is at rough 25% of frame duration */
 #define PHASE_OFFSET_TARGET ((double)0.25)
 #define PHASE_CHECK_INTERVAL 100
@@ -75,6 +83,8 @@ vlc_module_begin()
                     MMAL_ADJUST_REFRESHRATE_LONGTEXT, false)
     add_bool(MMAL_NATIVE_INTERLACED, false, MMAL_NATIVE_INTERLACE_TEXT,
                     MMAL_NATIVE_INTERLACE_LONGTEXT, false)
+    add_integer(MMAL_CROP_NAME, 4, MMAL_CROP_TEXT, MMAL_CROP_LONGTEXT, false)
+    add_integer(MMAL_CROP_NAME_HD, 4, MMAL_CROP_TEXT_HD, MMAL_CROP_LONGTEXT_HD, false)
     set_callbacks(Open, Close)
 vlc_module_end()
 
@@ -129,6 +139,8 @@ struct vout_display_sys_t {
     bool b_top_field_first; /* cached interlaced settings to detect changes for native mode */
     bool b_progressive;
     bool opaque; /* indicated use of opaque picture format (zerocopy) */
+
+    int crop;
 };
 
 static const vlc_fourcc_t subpicture_chromas[] = {
@@ -140,6 +152,8 @@ static const vlc_fourcc_t subpicture_chromas[] = {
 static inline uint32_t align(uint32_t x, uint32_t y);
 static int configure_display(vout_display_t *vd, const vout_display_cfg_t *cfg,
                 const video_format_t *fmt);
+static int update_crop(vlc_object_t *p_this, char const *psz_cmd,
+                vlc_value_t oldval, vlc_value_t newval, void *p_data);
 
 /* VLC vout display callbacks */
 static picture_pool_t *vd_pool(vout_display_t *vd, unsigned count);
@@ -313,6 +327,7 @@ static int Open(vlc_object_t *object)
     sys->dmx_handle = vc_dispmanx_display_open(0);
     vd->info.subpicture_chromas = subpicture_chromas;
 
+    sys->crop = 0;
 out:
     if (ret != VLC_SUCCESS)
         Close(object);
@@ -378,6 +393,21 @@ static inline uint32_t align(uint32_t x, uint32_t y) {
         return x + y - mod;
 }
 
+static int update_crop(vlc_object_t *p_this, char const *psz_cmd,
+                vlc_value_t oldval, vlc_value_t newval, void *p_data)
+{
+    vout_display_t *vd = p_data;
+    VLC_UNUSED(p_this);
+    VLC_UNUSED(psz_cmd);
+    VLC_UNUSED(oldval);
+    VLC_UNUSED(newval);
+
+    msg_Dbg(vd, "crop settings changed, update!");
+    configure_display(vd, vd->cfg, NULL);
+
+    return VLC_SUCCESS;
+}
+
 static int configure_display(vout_display_t *vd, const vout_display_cfg_t *cfg,
                 const video_format_t *fmt)
 {
@@ -385,6 +415,8 @@ static int configure_display(vout_display_t *vd, const vout_display_cfg_t *cfg,
     vout_display_place_t place;
     MMAL_DISPLAYREGION_T display_region;
     MMAL_STATUS_T status;
+    double fraction;
+    double crop;
 
     if (!cfg && !fmt)
         return -EINVAL;
@@ -408,13 +440,19 @@ static int configure_display(vout_display_t *vd, const vout_display_cfg_t *cfg,
 
     vout_display_PlacePicture(&place, fmt, cfg, false);
 
+    if (vd->fmt.i_height < 720)
+        crop = var_InheritInteger(vd, MMAL_CROP_NAME);
+    else
+        crop = var_InheritInteger(vd, MMAL_CROP_NAME_HD);
+    fraction = crop / 100.0f;
+
     display_region.hdr.id = MMAL_PARAMETER_DISPLAYREGION;
     display_region.hdr.size = sizeof(MMAL_DISPLAYREGION_T);
     display_region.fullscreen = MMAL_FALSE;
-    display_region.src_rect.x = fmt->i_x_offset;
-    display_region.src_rect.y = fmt->i_y_offset;
-    display_region.src_rect.width = fmt->i_visible_width;
-    display_region.src_rect.height = fmt->i_visible_height;
+    display_region.src_rect.x = (0.5f * fraction * fmt->i_visible_width) + fmt->i_x_offset;
+    display_region.src_rect.y = (0.5f * fraction * fmt->i_visible_height) + fmt->i_y_offset;
+    display_region.src_rect.width = fmt->i_visible_width - 2 * display_region.src_rect.x;
+    display_region.src_rect.height = fmt->i_visible_height - 2 * display_region.src_rect.y;
     display_region.dest_rect.x = place.x;
     display_region.dest_rect.y = place.y;
     display_region.dest_rect.width = place.width;
@@ -548,6 +586,7 @@ static void vd_display(vout_display_t *vd, picture_t *picture,
     picture_sys_t *pic_sys = picture->p_sys;
     MMAL_BUFFER_HEADER_T *buffer = pic_sys->buffer;
     MMAL_STATUS_T status;
+    int crop;
 
     if (picture->format.i_frame_rate != sys->i_frame_rate ||
         picture->format.i_frame_rate_base != sys->i_frame_rate_base ||
@@ -588,6 +627,21 @@ static void vd_display(vout_display_t *vd, picture_t *picture,
     if (sys->next_phase_check == 0 && sys->adjust_refresh_rate)
         maintain_phase_sync(vd);
     sys->next_phase_check = (sys->next_phase_check + 1) % PHASE_CHECK_INTERVAL;
+
+    if (vd->fmt.i_height < 720)
+        crop = var_InheritInteger(vd, MMAL_CROP_NAME);
+    else
+        crop = var_InheritInteger(vd, MMAL_CROP_NAME_HD);
+
+    if (sys->crop != crop) {
+        vlc_value_t oldval;
+        vlc_value_t newval;
+        oldval.i_int = sys->crop;
+        newval.i_int = crop;
+        sys->crop = crop;
+
+        update_crop((vlc_object_t*)vd, NULL, oldval, newval, vd);
+    }
 
     vlc_mutex_lock(&sys->buffer_mutex);
     while (sys->buffers_in_transit >= MAX_BUFFERS_IN_TRANSIT)
