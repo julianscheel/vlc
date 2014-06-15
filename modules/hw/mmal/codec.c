@@ -373,6 +373,26 @@ static int change_output_format(decoder_t *dec)
                 interlace_type.eMode);
     }
 
+    // FIXME: framerate seems unreliable from mmal codec.
+    // this works around it by checking for sane values and overriding them
+    // otherwise
+    {
+        int fps = sys->output->format->es->video.frame_rate.num /
+            sys->output->format->es->video.frame_rate.den;
+        if (fps < 23 || fps > 60) {
+            if (dec->fmt_out.video.i_visible_width == 1280) {
+                dec->fmt_out.video.i_frame_rate = 50;
+                dec->fmt_out.video.i_frame_rate_base = 1;
+            } else {
+                dec->fmt_out.video.i_frame_rate = 25;
+                dec->fmt_out.video.i_frame_rate_base = 1;
+            }
+            msg_Dbg(dec, "Overwrite frame_rate to: %d/%d",
+                    dec->fmt_out.video.i_frame_rate,
+                    dec->fmt_out.video.i_frame_rate_base);
+        }
+    }
+
 out:
     mmal_format_free(sys->output_format);
     sys->output_format = NULL;
