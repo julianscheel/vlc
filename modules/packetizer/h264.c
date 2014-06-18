@@ -414,6 +414,10 @@ static block_t *Packetize( decoder_t *p_dec, block_t **pp_block )
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
 
+    if( !pp_block || !*pp_block )
+        return NULL;
+    if( (*pp_block)->i_flags&(BLOCK_FLAG_DISCONTINUITY|BLOCK_FLAG_CORRUPTED) )
+        p_sys->i_valid = 0;
     return packetizer_Packetize( &p_sys->packetizer, pp_block );
 }
 
