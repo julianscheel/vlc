@@ -770,7 +770,9 @@ static block_t *OutputPicture( decoder_t *p_dec )
     p_pic->i_length = 0;    /* FIXME */
     p_pic->i_flags |= p_sys->slice.i_frame_type;
     p_pic->i_flags &= ~BLOCK_FLAG_PRIVATE_AUD;
-    if( !p_sys->b_header || p_sys->i_valid < REQUIRED_SEI_POINTS)
+    if( !p_sys->b_header ||
+            (p_sys->i_valid < REQUIRED_SEI_POINTS &&
+                (!p_sys->b_sps || !p_sys->b_pps || p_sys->i_recovery_frame >= 0 || p_sys->i_valid > 0)))
         p_pic->i_flags |= BLOCK_FLAG_PREROLL;
 
     p_sys->slice.i_frame_type = 0;
@@ -1124,8 +1126,9 @@ static void ParseSlice( decoder_t *p_dec, bool *pb_new_picture, slice_t *p_slice
                slice.i_delta_pic_order_cnt1 != p_sys->slice.i_delta_pic_order_cnt1 ) )
         b_pic = true;
     if( ( slice.i_nal_type == NAL_SLICE_IDR || p_sys->slice.i_nal_type == NAL_SLICE_IDR ) &&
-        ( slice.i_nal_type != p_sys->slice.i_nal_type || slice.i_idr_pic_id != p_sys->slice.i_idr_pic_id ) )
+        ( slice.i_nal_type != p_sys->slice.i_nal_type || slice.i_idr_pic_id != p_sys->slice.i_idr_pic_id ) ) {
             b_pic = true;
+    }
 
     /* */
     *pb_new_picture = b_pic;
