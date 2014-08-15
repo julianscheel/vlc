@@ -105,6 +105,7 @@ struct decoder_sys_t
     block_t *pp_sps[SPS_MAX];
     block_t *pp_pps[PPS_MAX];
     int    i_recovery_frames;  /* -1 = no recovery */
+    bool   b_has_recovery_frames;
     bool   b_valid_recovery_point;
     int    i_recovery_frame;
 
@@ -225,6 +226,7 @@ static int Open( vlc_object_t *p_this )
         p_sys->pp_pps[i] = NULL;
     p_sys->i_recovery_frames = -1;
     p_sys->b_valid_recovery_point = false;
+    p_sys->b_has_recovery_frames = false;
     p_sys->i_recovery_frame = -1;
 
     p_sys->slice.i_nal_type = -1;
@@ -772,7 +774,8 @@ static block_t *OutputPicture( decoder_t *p_dec )
     p_pic->i_flags &= ~BLOCK_FLAG_PRIVATE_AUD;
     if( !p_sys->b_header ||
             (p_sys->i_valid < REQUIRED_SEI_POINTS &&
-                (!p_sys->b_sps || !p_sys->b_pps || p_sys->i_recovery_frame >= 0 || p_sys->i_valid > 0)))
+                (!p_sys->b_sps || !p_sys->b_pps || p_sys->b_has_recovery_frames ||
+                 p_sys->i_recovery_frame >= 0 || p_sys->i_valid > 0)))
         p_pic->i_flags |= BLOCK_FLAG_PREROLL;
 
     p_sys->slice.i_frame_type = 0;
@@ -1204,8 +1207,10 @@ static void ParseSei( decoder_t *p_dec, block_t *p_frag )
             //int i_changing_slice_group = bs_read( &s, 2 );
             if( p_sys->i_valid < REQUIRED_SEI_POINTS) {
                 msg_Dbg( p_dec, "Seen SEI recovery point, %d recovery frames", i_recovery_frames );
-                if ( p_sys->i_recovery_frames == -1 || i_recovery_frames < p_sys->i_recovery_frames )
+                if ( p_sys->i_recovery_frames == -1 || i_recovery_frames < p_sys->i_recovery_frames ) {
                     p_sys->i_recovery_frames = i_recovery_frames;
+                    p_sys->b_has_recovery_frames = true;
+                }
             }
         }
 
