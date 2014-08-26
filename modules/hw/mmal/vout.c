@@ -66,6 +66,22 @@
 #define MMAL_CROP_TEXT_HD N_("mmal video output cropping (HD)")
 #define MMAL_CROP_LONGTEXT_HD N_("Crops the specified fraction from images before outputting them (HD)")
 
+#define MMAL_CROP_TOP_NAME "mmal-vout-crop-top"
+#define MMAL_CROP_TOP_TEXT N_("mmal video output top cropping")
+#define MMAL_CROP_TOP_LONGTEXT N_("Crop the upper edge of a video")
+
+#define MMAL_CROP_BOTTOM_NAME "mmal-vout-crop-bottom"
+#define MMAL_CROP_BOTTOM_TEXT N_("mmal video output bottom cropping")
+#define MMAL_CROP_BOTTOM_LONGTEXT N_("Crop the lower edge of a video")
+
+#define MMAL_CROP_LEFT_NAME "mmal-vout-crop-left"
+#define MMAL_CROP_LEFT_TEXT N_("mmal video output left cropping")
+#define MMAL_CROP_LEFT_LONGTEXT N_("Crop the left edge of a video")
+
+#define MMAL_CROP_RIGHT_NAME "mmal-vout-crop-right"
+#define MMAL_CROP_RIGHT_TEXT N_("mmal video output right cropping")
+#define MMAL_CROP_RIGHT_LONGTEXT N_("Crop the right edge of a video")
+
 /* Ideal rendering phase target is at rough 25% of frame duration */
 #define PHASE_OFFSET_TARGET ((double)0.25)
 #define PHASE_CHECK_INTERVAL 100
@@ -85,6 +101,10 @@ vlc_module_begin()
                     MMAL_NATIVE_INTERLACE_LONGTEXT, false)
     add_integer(MMAL_CROP_NAME, 4, MMAL_CROP_TEXT, MMAL_CROP_LONGTEXT, false)
     add_integer(MMAL_CROP_NAME_HD, 4, MMAL_CROP_TEXT_HD, MMAL_CROP_LONGTEXT_HD, false)
+    add_integer(MMAL_CROP_TOP_NAME, 0, MMAL_CROP_TOP_TEXT, MMAL_CROP_LONGTEXT, false)
+    add_integer(MMAL_CROP_BOTTOM_NAME, 0, MMAL_CROP_BOTTOM_TEXT, MMAL_CROP_LONGTEXT, false)
+    add_integer(MMAL_CROP_LEFT_NAME, 0, MMAL_CROP_LEFT_TEXT, MMAL_CROP_LONGTEXT, false)
+    add_integer(MMAL_CROP_RIGHT_NAME, 0, MMAL_CROP_RIGHT_TEXT, MMAL_CROP_LONGTEXT, false)
     set_callbacks(Open, Close)
 vlc_module_end()
 
@@ -449,10 +469,21 @@ static int configure_display(vout_display_t *vd, const vout_display_cfg_t *cfg,
     display_region.hdr.id = MMAL_PARAMETER_DISPLAYREGION;
     display_region.hdr.size = sizeof(MMAL_DISPLAYREGION_T);
     display_region.fullscreen = MMAL_FALSE;
-    display_region.src_rect.x = (0.5f * fraction * fmt->i_visible_width) + fmt->i_x_offset;
-    display_region.src_rect.y = (0.5f * fraction * fmt->i_visible_height) + fmt->i_y_offset;
-    display_region.src_rect.width = fmt->i_visible_width - 2 * display_region.src_rect.x;
-    display_region.src_rect.height = fmt->i_visible_height - 2 * display_region.src_rect.y;
+    display_region.src_rect.x = (0.5f * fraction * fmt->i_visible_width) +
+        fmt->i_x_offset + var_InheritInteger(vd, MMAL_CROP_LEFT_NAME);
+    display_region.src_rect.y = (0.5f * fraction * fmt->i_visible_height) +
+        fmt->i_y_offset + var_InheritInteger(vd, MMAL_CROP_TOP_NAME);
+    display_region.src_rect.width = fmt->i_visible_width -
+        fraction * fmt->i_visible_width -
+        var_InheritInteger(vd, MMAL_CROP_RIGHT_NAME) -
+        var_InheritInteger(vd, MMAL_CROP_LEFT_NAME);
+    display_region.src_rect.height = fmt->i_visible_height -
+        fraction * fmt->i_visible_height -
+        var_InheritInteger(vd, MMAL_CROP_BOTTOM_NAME) -
+        var_InheritInteger(vd, MMAL_CROP_TOP_NAME);
+    msg_Dbg(vd, "src_rect: %dx%d+%d+%d", display_region.src_rect.width,
+            display_region.src_rect.height, display_region.src_rect.x,
+            display_region.src_rect.y);
     display_region.dest_rect.x = place.x;
     display_region.dest_rect.y = place.y;
     display_region.dest_rect.width = place.width;
