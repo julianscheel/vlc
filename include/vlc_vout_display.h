@@ -110,6 +110,9 @@ typedef struct {
         int den;
     } zoom;
 
+    /* Phase offset to be applied to timestamps */
+    int phase_offset;
+
 } vout_display_cfg_t;
 
 /**
@@ -207,6 +210,9 @@ enum {
     VOUT_DISPLAY_EVENT_MOUSE_PRESSED,
     VOUT_DISPLAY_EVENT_MOUSE_RELEASED,
     VOUT_DISPLAY_EVENT_MOUSE_DOUBLE_CLICK,
+
+    /* Ask the vout core to apply a phase offset to timestamps */
+    VOUT_DISPLAY_EVENT_PHASE_OFFSET,
 };
 
 /**
@@ -385,6 +391,10 @@ static inline void vout_display_SendEventMouseReleased(vout_display_t *vd, int b
 static inline void vout_display_SendEventMouseDoubleClick(vout_display_t *vd)
 {
     vout_display_SendEvent(vd, VOUT_DISPLAY_EVENT_MOUSE_DOUBLE_CLICK);
+}
+static inline void vout_display_SendEventPhaseOffset(vout_display_t *vd, int offset)
+{
+        vout_display_SendEvent(vd, VOUT_DISPLAY_EVENT_PHASE_OFFSET, offset);
 }
 
 /**

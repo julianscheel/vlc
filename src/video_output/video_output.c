@@ -783,6 +783,7 @@ static int ThreadDisplayPreparePicture(vout_thread_t *vout, bool reuse, bool fra
         } else {
             decoded = picture_fifo_Pop(vout->p->decoder_fifo);
             if (decoded) {
+                decoded->date += vout->p->display.vd->cfg->phase_offset;
                 if (is_late_dropped && !decoded->b_force) {
                     const mtime_t predicted = mdate() + 0; /* TODO improve */
                     const mtime_t late = predicted - decoded->date;

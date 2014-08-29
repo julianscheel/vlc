@@ -702,6 +702,13 @@ static void VoutDisplayEvent(vout_display_t *vd, int event, va_list args)
         vlc_mutex_unlock(&osys->lock);
         break;
     }
+    case VOUT_DISPLAY_EVENT_PHASE_OFFSET: {
+        const int offset = (int)va_arg(args, int);
+
+        msg_Dbg(vd, "VoutDisplayEvent 'phase offset' %d", offset);
+        osys->cfg.phase_offset = offset;
+        break;
+    }
     default:
         msg_Err(vd, "VoutDisplayEvent received event %d", event);
         /* TODO add an assert when all event are handled */
@@ -1380,6 +1387,7 @@ static void SplitterEvent(vout_display_t *vd, int event, va_list args)
     case VOUT_DISPLAY_EVENT_FULLSCREEN:
     case VOUT_DISPLAY_EVENT_DISPLAY_SIZE:
     case VOUT_DISPLAY_EVENT_PICTURES_INVALID:
+    case VOUT_DISPLAY_EVENT_PHASE_OFFSET:
         VoutDisplayEvent(vd, event, args);
         break;
 
