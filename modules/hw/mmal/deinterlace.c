@@ -41,6 +41,8 @@
 #define NUM_EXTRA_BUFFERS 2
 #define MIN_NUM_BUFFERS_IN_TRANSIT 2
 
+#define MAX_ALLOWED_FPS 30
+
 static int Open(filter_t *filter);
 static void Close(filter_t *filter);
 
@@ -440,6 +442,16 @@ static picture_t *deinterlace(filter_t *filter, picture_t *picture)
      */
     if (!picture)
         return ret;
+
+    /*
+     * Do not deinterlace if framerate is > 30fps. This is unlikely to work
+     * well in any case.
+     */
+    if (picture) {
+        double fps = (double)picture->format.i_frame_rate / picture->format.i_frame_rate_base;
+        if (fps > MAX_ALLOWED_FPS)
+            return picture;
+    }
 
     vlc_mutex_lock(&sys->mutex);
     buffer = mmal_queue_timedwait(sys->input_pool->queue, 2);
