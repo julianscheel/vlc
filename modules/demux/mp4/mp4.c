@@ -82,7 +82,6 @@ struct demux_sys_t
     bool         b_fragmented;   /* fMP4 */
     bool         b_seekable;
     bool         b_fastseekable;
-    bool         b_seekmode;
     bool         b_smooth;       /* Is it Smooth Streaming? */
     bool         b_dash;
 
@@ -589,7 +588,6 @@ static int Open( vlc_object_t * p_this )
     /* I need to seek */
     stream_Control( p_demux->s, STREAM_CAN_SEEK, &p_sys->b_seekable );
     stream_Control( p_demux->s, STREAM_CAN_FASTSEEK, &p_sys->b_fastseekable );
-    p_sys->b_seekmode = p_sys->b_fastseekable;
 
     /*Set exported functions */
     p_demux->pf_demux = Demux;
@@ -1032,32 +1030,17 @@ static int Demux( demux_t *p_demux )
     /* Find next track matching contiguous data */
     mp4_track_t *tk = NULL;
     uint64_t i_candidate_pos = UINT64_MAX;
-    mtime_t i_candidate_dts = INT64_MAX;
     for( i_track = 0; i_track < p_sys->i_tracks; i_track++ )
     {
         mp4_track_t *tk_tmp = &p_sys->track[i_track];
         if( !tk_tmp->b_ok || tk_tmp->b_chapter || !tk_tmp->b_selected || tk_tmp->i_sample >= tk_tmp->i_sample_count )
             continue;
 
-        if ( p_sys->b_seekmode )
+        uint64_t i_pos = MP4_TrackGetPos( tk_tmp );
+        if ( i_pos <= i_candidate_pos )
         {
-            mtime_t i_dts = MP4_TrackGetDTS( p_demux, tk_tmp );
-            if ( i_dts <= i_candidate_dts )
-            {
-                tk = tk_tmp;
-                i_candidate_dts = i_dts;
-                i_candidate_pos = MP4_TrackGetPos( tk_tmp );
-            }
-        }
-        else
-        {
-            /* Try to avoid seeking on non fastseekable. Will fail with non interleaved content */
-            uint64_t i_pos = MP4_TrackGetPos( tk_tmp );
-            if ( i_pos <= i_candidate_pos )
-            {
-                i_candidate_pos = i_pos;
-                tk = tk_tmp;
-            }
+            i_candidate_pos = i_pos;
+            tk = tk_tmp;
         }
     }
 
@@ -1065,16 +1048,6 @@ static int Demux( demux_t *p_demux )
     {
         msg_Dbg( p_demux, "Could not select track by data position" );
         goto end;
-    }
-    else if ( p_sys->b_seekmode )
-    {
-        if( stream_Seek( p_demux->s, i_candidate_pos ) )
-        {
-            msg_Warn( p_demux, "track[0x%x] will be disabled (eof?)",
-                      tk->i_track_ID );
-            MP4_TrackUnselect( p_demux, tk );
-            goto end;
-        }
     }
 
 #if 0
@@ -1151,15 +1124,7 @@ end:
                  (tk->fmt.i_cat != AUDIO_ES && tk->fmt.i_cat != VIDEO_ES) )
                 continue;
 
-            mtime_t i_dts = MP4_TrackGetDTS( p_demux, tk );
-            p_sys->i_pcr = __MIN( i_dts, p_sys->i_pcr );
-
-            if ( !p_sys->b_seekmode && i_dts > p_sys->i_pcr + 2*CLOCK_FREQ )
-            {
-                msg_Dbg( p_demux, "that media doesn't look interleaved, will need to seek");
-                p_sys->b_seekmode = true;
-            }
-
+            p_sys->i_pcr = __MIN( MP4_TrackGetDTS( p_demux, tk ), p_sys->i_pcr );
             p_sys->i_time = p_sys->i_pcr * p_sys->i_timescale / CLOCK_FREQ;
         }
     }
