@@ -194,6 +194,8 @@ VLC_API void stream_DemuxSend( stream_t *s, block_t *p_block );
  */
 VLC_API int stream_DemuxControlVa( stream_t *s, int, va_list );
 
+VLC_API bool stream_DemuxAlive( stream_t *s );
+
 static inline int stream_DemuxControl( stream_t *s, int query, ... )
 {
     va_list ap;

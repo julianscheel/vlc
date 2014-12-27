@@ -395,6 +395,7 @@ stream_Block
 stream_BlockRemaining
 stream_Control
 stream_Delete
+stream_DemuxAlive
 stream_DemuxNew
 stream_DemuxSend
 stream_DemuxControlVa

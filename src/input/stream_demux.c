@@ -154,6 +154,11 @@ int stream_DemuxControlVa( stream_t *s, int query, va_list args )
     return VLC_SUCCESS;
 }
 
+bool stream_DemuxAlive( stream_t *s )
+{
+    return atomic_load( &s->p_sys->active );
+}
+
 static void DStreamDelete( stream_t *s )
 {
     stream_sys_t *p_sys = s->p_sys;
@@ -331,7 +336,10 @@ static void* DStreamThread( void *obj )
     p_demux = demux_New( s, s->p_input, "", p_sys->psz_name, "", s, p_sys->out,
                          false );
     if( p_demux == NULL )
+    {
+        atomic_store( &p_sys->active, false );
         return NULL;
+    }
 
     /* stream_Demux cannot apply DVB filters.
      * Get all programs and let the E/S output sort them out. */
@@ -364,7 +372,10 @@ static void* DStreamThread( void *obj )
         }
 
         if( demux_Demux( p_demux ) <= 0 )
+        {
+            atomic_store( &p_sys->active, false );
             break;
+        }
     }
 
     /* Explicit kludge: the stream is destroyed by the owner of the
