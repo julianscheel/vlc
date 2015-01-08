@@ -525,6 +525,7 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
     /*
      * Send output buffers
      */
+#ifndef MMAL_CODEC_ASYNC
     if (sys->output_pool) {
         vlc_mutex_lock(&sys->mutex);
         buffer = mmal_queue_get(sys->decoded_pictures);
@@ -544,6 +545,10 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
 
     if (ret)
         goto out;
+#else
+    if (sys->output_pool)
+        fill_output_port(dec);
+#endif
 
     /*
      * Process input
@@ -649,8 +654,21 @@ static void output_port_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
     vlc_mutex_lock(&sys->mutex);
     if (buffer->cmd == 0) {
         if (buffer->length > 0) {
+#ifndef MMAL_CODEC_ASYNC
             mmal_queue_put(sys->decoded_pictures, buffer);
             fill_output_port(dec);
+#else
+            picture = (picture_t *)buffer->user_data;
+            picture->date = buffer->pts;
+            picture->b_progressive = sys->b_progressive;
+            picture->b_top_field_first = sys->b_top_field_first;
+            if (sys->opaque)
+                picture->p_sys->decoder_buffer = buffer;
+            else
+                mmal_buffer_header_release(buffer);
+            decoder_QueuePicture(dec, picture);
+            fill_output_port(dec);
+#endif
         } else {
             picture = (picture_t *)buffer->user_data;
             picture_Release(picture);
