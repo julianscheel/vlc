@@ -45,6 +45,7 @@
 #define NUM_DECODER_BUFFER_HEADERS 20
 
 #define MIN_NUM_BUFFERS_IN_TRANSIT 2
+#undef MMAL_TIMING_DEBUG
 
 #define MMAL_ZEROCOPY_NAME "mmal-zerocopy"
 #define MMAL_ZEROCOPY_TEXT N_("Decode frames directly into RPI VideoCore instead of host memory.")
@@ -514,6 +515,10 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
     MMAL_STATUS_T status;
     picture_t *ret = NULL;
 
+#ifdef MMAL_TIMING_DEBUG
+    msg_Dbg(dec, "timing decode, %"PRId64, mdate());
+    mtime_t start = mdate();
+#endif
     /*
      * Configure output port if necessary
      */
@@ -569,6 +574,9 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
     if (block->i_flags & BLOCK_FLAG_DISCONTINUITY)
         flags |= MMAL_BUFFER_HEADER_FLAG_DISCONTINUITY;
 
+#ifdef MMAL_TIMING_DEBUG
+    msg_Dbg(dec, "timing queue data, %"PRId64, mdate());
+#endif
     vlc_mutex_lock(&sys->mutex);
     while (block->i_buffer > 0) {
         buffer = mmal_queue_timedwait(sys->input_pool->queue, 2);
@@ -602,6 +610,9 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
             buffer->user_data = block;
         buffer->flags = flags;
 
+#ifdef MMAL_TIMING_DEBUG
+        msg_Dbg(dec, "timing send data, %"PRId64, mdate());
+#endif
         status = mmal_port_send_buffer(sys->input, buffer);
         if (status != MMAL_SUCCESS) {
             msg_Err(dec, "Failed to send buffer to input port (status=%"PRIx32" %s)",
@@ -612,6 +623,9 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
     vlc_mutex_unlock(&sys->mutex);
 
 out:
+#ifdef MMAL_TIMING_DEBUG
+    msg_Dbg(dec, "timing duration, %"PRId64", %"PRId64, start, mdate() - start);
+#endif
     return ret;
 }
 
@@ -657,6 +671,9 @@ static void output_port_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 #ifndef MMAL_CODEC_ASYNC
             mmal_queue_put(sys->decoded_pictures, buffer);
             fill_output_port(dec);
+#ifdef MMAL_TIMING_DEBUG
+            msg_Dbg(dec, "timing queue, %"PRId64, mdate());
+#endif
 #else
             picture = (picture_t *)buffer->user_data;
             picture->date = buffer->pts;
@@ -666,6 +683,9 @@ static void output_port_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
                 picture->p_sys->decoder_buffer = buffer;
             else
                 mmal_buffer_header_release(buffer);
+#ifdef MMAL_TIMING_DEBUG
+            msg_Dbg(dec, "timing queue, %"PRId64, mdate());
+#endif
             decoder_QueuePicture(dec, picture);
             fill_output_port(dec);
 #endif
