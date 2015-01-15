@@ -1,7 +1,7 @@
 # Building vlc
 #
 bin_PROGRAMS = vlc
-noinst_PROGRAMS = vlc-static
+noinst_PROGRAMS =
 noinst_DATA =
 vlclib_PROGRAMS = vlc-cache-gen
 EXTRA_PROGRAMS = vlc-wrapper

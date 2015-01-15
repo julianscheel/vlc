@@ -932,7 +932,7 @@ libvlc: libvlccore
 	cd lib && $(MAKE) $(AM_MAKEFLAGS) libvlc.la
 
 core: libvlc vlc$(EXEEXT)
-	cd bin && $(MAKE) $(AM_MAKEFLAGS) vlc$(EXEEXT) vlc-static$(EXEEXT)
+	cd bin && $(MAKE) $(AM_MAKEFLAGS) vlc$(EXEEXT)
 
 doc:
 	cd doc && $(MAKE) $(AM_MAKEFLAGS) doc
