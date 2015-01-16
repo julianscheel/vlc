@@ -484,10 +484,14 @@ static int configure_display(vout_display_t *vd, const vout_display_cfg_t *cfg,
     msg_Dbg(vd, "src_rect: %dx%d+%d+%d", display_region.src_rect.width,
             display_region.src_rect.height, display_region.src_rect.x,
             display_region.src_rect.y);
-    display_region.dest_rect.x = place.x;
-    display_region.dest_rect.y = place.y;
-    display_region.dest_rect.width = place.width;
-    display_region.dest_rect.height = place.height;
+
+    /* FIXME: ugly hack to ensure we always render fullscreen */
+    display_region.dest_rect.x = 0;
+    display_region.dest_rect.y = 0;
+    display_region.dest_rect.width = sys->display_width;
+    display_region.dest_rect.height = sys->display_height;
+    /*---*/
+
     display_region.layer = sys->layer;
     display_region.set = MMAL_DISPLAY_SET_FULLSCREEN | MMAL_DISPLAY_SET_SRC_RECT |
             MMAL_DISPLAY_SET_DEST_RECT | MMAL_DISPLAY_SET_LAYER;
