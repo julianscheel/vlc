@@ -177,8 +177,6 @@ static int update_crop(vlc_object_t *p_this, char const *psz_cmd,
 
 /* VLC vout display callbacks */
 static picture_pool_t *vd_pool(vout_display_t *vd, unsigned count);
-static void vd_prepare(vout_display_t *vd, picture_t *picture,
-                subpicture_t *subpicture);
 static void vd_display(vout_display_t *vd, picture_t *picture,
                 subpicture_t *subpicture);
 static int vd_control(vout_display_t *vd, int query, va_list args);
@@ -330,7 +328,6 @@ static int Open(vlc_object_t *object)
     vlc_mutex_init(&sys->manage_mutex);
 
     vd->pool = vd_pool;
-    vd->prepare = vd_prepare;
     vd->display = vd_display;
     vd->control = vd_control;
     vd->manage = vd_manage;
@@ -598,20 +595,6 @@ static picture_pool_t *vd_pool(vout_display_t *vd, unsigned count)
 
 out:
     return sys->picture_pool;
-}
-
-static void vd_prepare(vout_display_t *vd, picture_t *picture,
-                subpicture_t *subpicture)
-{
-    vout_display_sys_t *sys = vd->sys;
-    picture_sys_t *pic_sys = picture->p_sys;
-
-    if (!sys->adjust_refresh_rate || pic_sys->displayed)
-        return;
-
-    /* Apply the required phase_offset to the picture, so that vd_display()
-     * will be called at the corrected time from the core */
-    picture->date += sys->phase_offset;
 }
 
 static void vd_display(vout_display_t *vd, picture_t *picture,
@@ -1082,6 +1065,8 @@ static void maintain_phase_sync(vout_display_t *vd)
         sys->phase_offset %= frame_duration;
         msg_Dbg(vd, "Apply phase offset of %"PRId32" ms (total offset %"PRId32" ms)",
                 phase_offset / 1000, sys->phase_offset / 1000);
+
+        vout_display_SendEventPhaseOffset(vd, sys->phase_offset);
 
         /* Reset the latency target, so that it does not get confused
          * by the jump in the offset */
