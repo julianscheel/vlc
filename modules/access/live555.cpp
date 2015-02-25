@@ -151,6 +151,8 @@ vlc_module_end ()
  * Local prototypes
  *****************************************************************************/
 
+#define CACHE_BLOCKS 40
+#define CACHE_BLOCK_SIZE 2000
 typedef struct
 {
     demux_t         *p_demux;
@@ -167,7 +169,16 @@ typedef struct
     stream_t        *p_out_muxed;    /* for muxed stream */
 
     uint8_t         *p_buffer;
+    uint8_t         *p_buffer_root;
     unsigned int    i_buffer;
+    unsigned int    i_used;
+
+    /* block with full buffer size used for dma */
+    block_t         *p_buffer_block;
+
+    /* list of small blocks for caching small-packet data */
+    block_t         *p_block[CACHE_BLOCKS];
+    unsigned int    i_active_block;
 
     bool            b_rtcp_sync;
     char            waiting;
@@ -663,6 +674,20 @@ bailout:
     return i_ret;
 }
 
+static void alloc_cache_blocks(live_track_t *tk)
+{
+    for (int i = 0; i < CACHE_BLOCKS; i++)
+        tk->p_block[i] = block_Alloc(CACHE_BLOCK_SIZE);
+    tk->i_active_block = 0;
+}
+
+static void alloc_buffer_block(live_track_t *tk)
+{
+    if (tk->p_buffer_block)
+        block_Release(tk->p_buffer_block);
+    tk->p_buffer_block = block_Alloc(tk->i_buffer);
+}
+
 /*****************************************************************************
  * SessionsSetup: prepares the subsessions and does the SETUP
  *****************************************************************************/
@@ -827,7 +852,12 @@ static int SessionsSetup( demux_t *p_demux )
             tk->f_npt       = 0.;
             tk->b_selected  = true;
             tk->i_buffer    = i_frame_buffer;
+            tk->i_used      = 0;
             tk->p_buffer    = (uint8_t *)malloc( i_frame_buffer );
+            tk->p_buffer_root = tk->p_buffer;
+            alloc_cache_blocks(tk);
+            tk->p_buffer_block = NULL;
+            alloc_buffer_block(tk);
 
             if( !tk->p_buffer )
             {
@@ -1330,8 +1360,19 @@ static int Demux( demux_t *p_demux )
         if( tk->waiting == 0 )
         {
             tk->waiting = 1;
-            tk->sub->readSource()->getNextFrame( tk->p_buffer, tk->i_buffer,
-                                          StreamRead, tk, StreamClose, tk );
+            if (tk->fmt.i_codec == VLC_CODEC_MP4A) {
+                block_t *block = tk->p_block[tk->i_active_block++];
+                tk->sub->readSource()->getNextFrame( block->p_buffer,
+                        block->i_buffer, StreamRead, tk, StreamClose, tk );
+            } else if( tk->fmt.i_codec == VLC_CODEC_H264 ||
+                    tk->fmt.i_codec == VLC_CODEC_HEVC ) {
+                block_t *block = tk->p_buffer_block;
+                tk->sub->readSource()->getNextFrame( block->p_buffer + 4,
+                        block->i_buffer - 4, StreamRead, tk, StreamClose, tk );
+            } else {
+                tk->sub->readSource()->getNextFrame( tk->p_buffer, tk->i_buffer,
+                                              StreamRead, tk, StreamClose, tk );
+            }
         }
     }
     /* Create a task that will be called if we wait more than 300ms */
@@ -1835,7 +1876,7 @@ static void StreamRead( void *p_private, unsigned int i_size,
     live_track_t   *tk = (live_track_t*)p_private;
     demux_t        *p_demux = tk->p_demux;
     demux_sys_t    *p_sys = p_demux->p_sys;
-    block_t        *p_block;
+    block_t        *p_block = NULL;
 
     //msg_Dbg( p_demux, "pts: %d", pts.tv_sec );
 
@@ -1969,18 +2010,19 @@ static void StreamRead( void *p_private, unsigned int i_size,
     }
     else if( tk->fmt.i_codec == VLC_CODEC_H264 || tk->fmt.i_codec == VLC_CODEC_HEVC )
     {
-        if( tk->fmt.i_codec == VLC_CODEC_H264 && (tk->p_buffer[0] & 0x1f) >= 24 )
-            msg_Warn( p_demux, "unsupported NAL type for H264" );
-        else if( tk->fmt.i_codec == VLC_CODEC_HEVC && ((tk->p_buffer[0] & 0x7e)>>1) >= 48 )
-            msg_Warn( p_demux, "unsupported NAL type for H265" );
-
         /* Normal NAL type */
-        p_block = block_Alloc( i_size + 4 );
+        p_block = tk->p_buffer_block;
+        p_block->i_buffer = i_size + 4;
         p_block->p_buffer[0] = 0x00;
         p_block->p_buffer[1] = 0x00;
         p_block->p_buffer[2] = 0x00;
         p_block->p_buffer[3] = 0x01;
-        memcpy( &p_block->p_buffer[4], tk->p_buffer, i_size );
+
+        if( tk->fmt.i_codec == VLC_CODEC_H264 && (tk->p_buffer[4] & 0x1f) >= 24 )
+            msg_Warn( p_demux, "unsupported NAL type for H264" );
+        else if( tk->fmt.i_codec == VLC_CODEC_HEVC && ((tk->p_buffer[4] & 0x7e)>>1) >= 48 )
+            msg_Warn( p_demux, "unsupported NAL type for H265" );
+
     }
     else if( tk->b_asf )
     {
@@ -1988,10 +2030,35 @@ static void StreamRead( void *p_private, unsigned int i_size,
                                   tk->sub->rtpSource()->curPacketMarkerBit(),
                                   tk->p_buffer, i_size );
     }
+    else if (tk->fmt.i_codec == VLC_CODEC_MP4A)
+    {
+        if (i_pts != VLC_TS_INVALID);
+            tk->p_block[tk->i_active_block - 1]->i_pts = VLC_TS_0 + i_pts;
+        tk->p_block[tk->i_active_block - 1]->i_buffer = i_size;
+
+        if (tk->i_active_block == CACHE_BLOCKS) {
+            int i;
+            for (i = 0; i < tk->i_active_block; i++) {
+                es_out_Send(p_demux->out, tk->p_es, tk->p_block[i]);
+            }
+            tk->i_active_block = 0;
+            alloc_cache_blocks(tk);
+        }
+    }
     else
     {
-        p_block = block_Alloc( i_size );
-        memcpy( p_block->p_buffer, tk->p_buffer, i_size );
+        if (tk->i_used >= 4096) {
+            msg_Dbg(p_demux, "Generic buffer on track %p (format: %s), size %d bytes",
+                    tk, vlc_fourcc_GetDescription(tk->fmt.i_cat, tk->fmt.i_codec),
+                    tk->i_used);
+            p_block = block_Alloc( tk->i_used );
+            memcpy( p_block->p_buffer, tk->p_buffer_root, tk->i_used );
+            tk->p_buffer = tk->p_buffer_root;
+            tk->i_used = 0;
+        } else {
+            tk->i_used += i_size;
+            tk->p_buffer += i_size;
+        }
     }
 
     if( p_sys->i_pcr < i_pts )
@@ -2020,6 +2087,11 @@ static void StreamRead( void *p_private, unsigned int i_size,
             stream_DemuxSend( p_sys->p_out_asf, p_block );
         else
             es_out_Send( p_demux->out, tk->p_es, p_block );
+
+        if (p_block == tk->p_buffer_block) {
+            tk->p_buffer_block = NULL;
+            alloc_buffer_block(tk);
+        }
     }
 
     /* warn that's ok */
