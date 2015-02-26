@@ -270,7 +270,8 @@ void input_clock_Update( input_clock_t *cl, vlc_object_t *p_log,
     /* */
     if( b_reset_reference )
     {
-        cl->i_next_drift_update = VLC_TS_INVALID;
+        msg_Dbg(p_log, "Reset clock reference!");
+        cl->i_next_drift_update = i_ck_system + CLOCK_FREQ*5;
         AvgReset( &cl->drift );
 
         /* Feed synchro with a new reference point. */
@@ -280,6 +281,9 @@ void input_clock_Update( input_clock_t *cl, vlc_object_t *p_log,
         cl->b_has_external_clock = false;
     }
 
+    if (cl->i_next_drift_update == VLC_TS_INVALID)
+        cl->i_next_drift_update = i_ck_system + CLOCK_FREQ*5;
+
     /* Compute the drift between the stream clock and the system clock
      * when we don't control the source pace */
     if( !b_can_pace_control && cl->i_next_drift_update < i_ck_system )
@@ -288,7 +292,7 @@ void input_clock_Update( input_clock_t *cl, vlc_object_t *p_log,
 
         AvgUpdate( &cl->drift, i_converted - i_ck_stream );
 
-        cl->i_next_drift_update = i_ck_system + CLOCK_FREQ/5; /* FIXME why that */
+        cl->i_next_drift_update = i_ck_system + CLOCK_FREQ*5; /* FIXME why that */
     }
 
     /* Update the extra buffering value */
@@ -663,7 +667,7 @@ static void AvgUpdate( average_t *p_avg, mtime_t i_value )
 }
 static mtime_t AvgGet( average_t *p_avg )
 {
-    return p_avg->i_value;
+    return (p_avg->i_count > p_avg->i_divider/3) ? p_avg->i_value: 0;
 }
 static void AvgRescale( average_t *p_avg, int i_divider )
 {
