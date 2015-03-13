@@ -21,3 +21,9 @@ libmmal_deinterlace_plugin_la_CFLAGS = $(AM_CFLAGS)
 libmmal_deinterlace_plugin_la_LDFLAGS = $(AM_LDFLAGS)
 libmmal_deinterlace_plugin_la_LIBADD = $(LIBS_mmal)
 mmal_LTLIBRARIES += libmmal_deinterlace_plugin.la
+
+libmmal_scale_plugin_la_SOURCES = scale.c
+libmmal_scale_plugin_la_CFLAGS = $(AM_CFLAGS)
+libmmal_scale_plugin_la_LDFLAGS = $(AM_LDFLAGS)
+libmmal_scale_plugin_la_LIBADD = $(LIBS_mmal)
+mmal_LTLIBRARIES += libmmal_scale_plugin.la
