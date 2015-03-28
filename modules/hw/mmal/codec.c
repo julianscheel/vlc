@@ -482,6 +482,7 @@ static int send_output_buffer(decoder_t *dec)
 err:
     if (picture)
         picture_Release(picture);
+    buffer->data = NULL;
     mmal_buffer_header_release(buffer);
     return ret;
 }
@@ -576,6 +577,7 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
             ret->b_progressive = sys->b_progressive;
             ret->b_top_field_first = sys->b_top_field_first;
 
+            buffer->data = NULL;
             mmal_buffer_header_reset(buffer);
             mmal_buffer_header_release(buffer);
         }
@@ -730,8 +732,10 @@ static void output_port_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
             picture->b_top_field_first = sys->b_top_field_first;
             if (sys->opaque)
                 picture->p_sys->decoder_buffer = buffer;
-            else
+            else {
+                buffer->data = NULL;
                 mmal_buffer_header_release(buffer);
+            }
 #ifdef MMAL_TIMING_DEBUG
             msg_Dbg(dec, "timing queue, %"PRId64, mdate());
 #endif
