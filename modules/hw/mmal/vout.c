@@ -672,10 +672,12 @@ static void vd_display(vout_display_t *vd, picture_t *picture,
         update_crop((vlc_object_t*)vd, NULL, oldval, newval, vd);
     }
 
-    vlc_mutex_lock(&sys->buffer_mutex);
-    while (atomic_load(&sys->buffers_in_transit) >= MAX_BUFFERS_IN_TRANSIT)
-        vlc_cond_wait(&sys->buffer_cond, &sys->buffer_mutex);
-    vlc_mutex_unlock(&sys->buffer_mutex);
+    if (sys->opaque) {
+        vlc_mutex_lock(&sys->buffer_mutex);
+        while (atomic_load(&sys->buffers_in_transit) >= MAX_BUFFERS_IN_TRANSIT)
+            vlc_cond_wait(&sys->buffer_cond, &sys->buffer_mutex);
+        vlc_mutex_unlock(&sys->buffer_mutex);
+    }
 }
 
 static int vd_control(vout_display_t *vd, int query, va_list args)
