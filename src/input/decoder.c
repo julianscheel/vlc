@@ -1447,6 +1447,9 @@ static void *DecoderThread( void *p_data )
 
         int canc = vlc_savecancel();
         DecoderProcess( p_dec, p_block );
+        vlc_restorecancel( canc );
+        vlc_testcancel();
+        canc = vlc_savecancel();
 
         vlc_mutex_lock( &p_owner->lock );
         if( p_block == NULL )
