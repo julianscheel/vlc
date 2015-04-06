@@ -98,6 +98,7 @@ static void output_port_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer);
 
 static int OpenDecoder(decoder_t *dec)
 {
+    MMAL_PARAMETER_BOOLEAN_T error_concealment;
     int ret = VLC_SUCCESS;
     decoder_sys_t *sys;
     MMAL_PARAMETER_UINT32_T extra_buffers;
@@ -159,6 +160,14 @@ static int OpenDecoder(decoder_t *dec)
             }
         }
     }
+
+    error_concealment.hdr.id = MMAL_PARAMETER_VIDEO_DECODE_ERROR_CONCEALMENT;
+    error_concealment.hdr.size = sizeof(MMAL_PARAMETER_BOOLEAN_T);
+    error_concealment.enable = MMAL_TRUE;
+    status = mmal_port_parameter_set(sys->input, &error_concealment.hdr);
+    if (status != MMAL_SUCCESS)
+        msg_Err(dec, "Failed to disable error concealment (status=%"PRIx32" %s)",
+                status, mmal_status_to_string(status));
 
     status = mmal_port_format_commit(sys->input);
     if (status != MMAL_SUCCESS) {
@@ -608,17 +617,6 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
         fill_output_port(dec);
     }
 
-    if (ret) {
-        if (sys->end_of_preroll_pts == 0 ||
-            sys->end_of_preroll_pts > ret->date) {
-                msg_Dbg(dec, "Drop frame as we are prerolling...");
-                picture_Release(ret);
-                ret = NULL;
-        } else if (sys->end_of_preroll_pts > 0) {
-            sys->end_of_preroll_pts = -1;
-        }
-    }
-
     if (ret)
         goto out;
 #else
@@ -645,9 +643,22 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
     if (block->i_flags & BLOCK_FLAG_DISCONTINUITY)
         flags |= MMAL_BUFFER_HEADER_FLAG_DISCONTINUITY;
 
-    if (!(block->i_flags & BLOCK_FLAG_PREROLL) && sys->end_of_preroll_pts == 0)
+    if (!(block->i_flags & BLOCK_FLAG_PREROLL) && sys->end_of_preroll_pts == 0) {
         sys->end_of_preroll_pts = block->i_pts;
-    else if (block->i_flags & BLOCK_FLAG_PREROLL)
+
+        MMAL_PARAMETER_BOOLEAN_T error_concealment;
+
+        sys->end_of_preroll_pts = -1;
+        msg_Dbg(dec, "Disable error concealment, as a fallback for broken streams");
+
+        error_concealment.hdr.id = MMAL_PARAMETER_VIDEO_DECODE_ERROR_CONCEALMENT;
+        error_concealment.hdr.size = sizeof(MMAL_PARAMETER_BOOLEAN_T);
+        error_concealment.enable = MMAL_FALSE;
+        status = mmal_port_parameter_set(sys->input, &error_concealment.hdr);
+        if (status != MMAL_SUCCESS)
+            msg_Err(dec, "Failed to disable error concealment (status=%"PRIx32" %s)",
+                    status, mmal_status_to_string(status));
+    } else if (block->i_flags & BLOCK_FLAG_PREROLL)
         sys->end_of_preroll_pts = 0;
 
 #ifdef MMAL_TIMING_DEBUG
