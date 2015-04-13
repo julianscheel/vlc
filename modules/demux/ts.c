@@ -330,6 +330,9 @@ struct demux_sys_t
 
     /* */
     bool        b_start_record;
+
+    /* eof injector */
+    bool        b_eof;
 };
 
 static int Demux    ( demux_t *p_demux );
@@ -900,6 +903,11 @@ static int Demux( demux_t *p_demux )
 {
     demux_sys_t *p_sys = p_demux->p_sys;
     bool b_wait_es = p_sys->i_pmt_es <= 0;
+
+    if (p_sys->b_eof) {
+        msg_Dbg(p_demux, "Force EOF, return 0");
+        return 0;
+    }
 
     /* We read at most 100 TS packet or until a frame is completed */
     for( int i_pkt = 0; i_pkt < p_sys->i_ts_read; i_pkt++ )
@@ -4014,6 +4022,13 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_pmt )
     if( prg->i_version != -1 &&
         ( !p_pmt->b_current_next || prg->i_version == p_pmt->i_version ) )
     {
+        dvbpsi_DeletePMT( p_pmt );
+        return;
+    }
+
+    if (prg->i_version != -1 && prg->i_version != p_pmt->i_version) {
+        msg_Dbg(p_demux, "Inject EOF due to PMT version update");
+        p_sys->b_eof = true;
         dvbpsi_DeletePMT( p_pmt );
         return;
     }
