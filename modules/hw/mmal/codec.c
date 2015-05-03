@@ -443,6 +443,10 @@ apply_fmt:
         }
     }
 
+    msg_Dbg(dec, "Apply aspect %d/%d", dec->fmt_out.video.i_sar_num,
+            dec->fmt_out.video.i_sar_den);
+    decoder_UpdateVideoFormat(dec);
+
 out:
     mmal_format_free(sys->output_format);
     sys->output_format = NULL;
@@ -727,6 +731,16 @@ static picture_t *decode(decoder_t *dec, block_t **pblock)
         buffer = mmal_queue_timedwait(sys->input_pool->queue, 2);
         if (!buffer) {
             msg_Err(dec, "Failed to retrieve buffer header for input data");
+            msg_Dbg(dec, "Buffer state:\n"
+                    " output: in_transit: %d, decoded: %d, buffer_num: %d\n"
+                    " input: in_transit: %d, buffer_num: %d",
+                    atomic_load(&sys->output_in_transit),
+                    mmal_queue_length(sys->decoded_pictures),
+                    sys->output->buffer_num,
+                    atomic_load(&sys->input_in_transit),
+                    sys->input->buffer_num);
+            msg_Dbg(dec, "Last pts: %"PRIu64, block->i_pts);
+            abort();
             need_flush = true;
             break;
         }

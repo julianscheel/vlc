@@ -245,6 +245,11 @@ vout_thread_t *vout_Request(vlc_object_t *object,
 
         if (!vout->p->dead) {
             msg_Dbg(object, "reusing provided vout");
+            if (cfg->fmt)
+                msg_Dbg(object, "using format aspect %d/%d",
+                        cfg->fmt->i_sar_num, cfg->fmt->i_sar_den);
+            else
+                msg_Dbg(object, "using unknown format");
             vout_IntfReinit(vout);
             return vout;
         }
@@ -715,6 +720,12 @@ static void ThreadChangeFilters(vout_thread_t *vout,
     if (!is_locked)
         vlc_mutex_lock(&vout->p->filter.lock);
 
+    if (source) {
+        msg_Dbg(vout, "%s(): source format aspect: %d/%d", __func__,
+                source->i_sar_num, source->i_sar_den);
+    } else {
+        msg_Dbg(vout, "%s(): No source format specified", __func__);
+    }
     es_format_t fmt_target;
     es_format_InitFromVideo(&fmt_target, source ? source : &vout->p->filter.format);
 
