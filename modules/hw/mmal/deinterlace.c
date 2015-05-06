@@ -306,6 +306,11 @@ static int send_output_buffer(filter_t *filter)
     picture->format.i_frame_rate = filter->fmt_out.video.i_frame_rate;
     picture->format.i_frame_rate_base = filter->fmt_out.video.i_frame_rate_base;
 
+    /** FIXME: Ugly hack, to push aspect ratio changes through the pipe **/
+    picture->format.i_sar_num = filter->fmt_in.video.i_sar_num;
+    picture->format.i_sar_den = filter->fmt_in.video.i_sar_den;
+    /* ---------------------------------------------------------------- **/
+
     buffer = picture->p_sys->buffer;
     buffer->cmd = 0;
 
@@ -379,6 +384,14 @@ static picture_t *deinterlace(filter_t *filter, picture_t *picture)
     buffer->user_data = picture;
     buffer->pts = picture->date;
     buffer->cmd = 0;
+
+    /** FIXME: Ugly hack, to push aspect ratio changes through the pipe **/
+    if (filter->fmt_in.video.i_sar_num != picture->format.i_sar_num ||
+            filter->fmt_in.video.i_sar_den != picture->format.i_sar_den) {
+        filter->fmt_in.video.i_sar_num = picture->format.i_sar_num;
+        filter->fmt_in.video.i_sar_den = picture->format.i_sar_den;
+    }
+    /* ---------------------------------------------------------------- **/
 
     if (!picture->p_sys->displayed) {
         vlc_mutex_lock(&sys->buffer_cond_mutex);
